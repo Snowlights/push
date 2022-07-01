@@ -1,0 +1,135 @@
+syntax = "proto3";
+package push.service;
+option go_package = "push.service";
+
+import "Grpc.proto";
+
+// protoc -I=. -I= {self location}/tool/idl/grpc
+// --go_out=plugins=grpc:. service.proto
+
+message UserInfo {
+    // 当前链接唯一标识，为了区分直播时不同终端或者不同链接时打开的是不同的房间的情况，
+    // 对于群聊是死的，但该状态由service或者业务层来进行维护
+    string ID = 1;
+    // 后两者用于更新
+    string cookie = 2;
+    bytes token = 3;
+}
+
+message ConnectReq {
+    bytes token = 1;
+    string cookie = 2;
+}
+
+message ConnectData {
+    UserInfo userInfo = 1;
+    repeated int64 accepts = 2; // 接受的消息类型
+}
+
+message ConnectRes {
+    ConnectData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
+message DisConnectReq {
+    string ID = 1;
+    string cookie = 2;
+    bytes token = 3;
+}
+
+message DisConnectData {
+
+}
+
+message DisConnectRes {
+    DisConnectData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
+message HeartBeatReq {
+    bytes token = 1;
+    string cookie = 2;
+    string userID = 3;
+}
+
+message HeartBeatData {
+    UserInfo userInfo = 1;
+    repeated int64 accepts = 2; // 接受的消息类型
+}
+
+message HeartBeatRes {
+    HeartBeatData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
+// 可以看作是那一类服务的数据或者说那一类具体的产品
+enum ReceiveMsgType {
+    ReceiveMsgType_Default = 0;
+    ReceiveMsgType_Normal = 1; // 普通
+}
+
+message ReceiveMsgReq {
+    ReceiveMsgType type = 1;
+    bytes body = 2;
+}
+
+message ReceiveMsgData {}
+
+message ReceiveMsgRes {
+    ReceiveMsgData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
+message PushMsgReq {
+    repeated string userIDList = 1;
+    sint64 op = 2;
+    bytes body = 3;
+}
+
+message PushMsgData {
+
+}
+
+message PushMsgRes {
+    PushMsgData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
+message PushRoomReq {
+    string roomID = 1;
+    bytes body = 2;
+}
+
+message PushRoomData {
+
+}
+
+message PushRoomRes {
+    PushRoomData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
+message BroadCastReq {
+    sint64 speed = 1;
+    sint64 op = 2;
+    bytes body = 3;
+}
+
+message BroadCastData {
+
+}
+
+message BroadCastRes {
+    BroadCastData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
+service HandleService {
+    rpc Connect(ConnectReq) returns (ConnectRes){}
+    rpc DisConnect(DisConnectReq) returns (DisConnectRes){}
+    rpc HeartBeat(HeartBeatReq) returns (HeartBeatRes) {}
+    rpc ReceiveMsg(ReceiveMsgReq) returns (ReceiveMsgRes){}
+    rpc PushMsg(PushMsgReq) returns (PushMsgRes){}
+    rpc PushRoom(PushRoomReq) returns (PushRoomRes){}
+    rpc BroadCast(BroadCastReq) returns (BroadCastRes){}
+}

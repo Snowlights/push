@@ -1,0 +1,64 @@
+syntax = "proto3";
+package push.gateway;
+option go_package = "push.gateway";
+
+import "Grpc.proto";
+
+// protoc -I=. -I= {self location}/tool/idl/grpc
+// --go_out=plugins=grpc:. gateway.proto
+enum PushMsgType {
+    PushMsgType_PUSH = 0; // 普通直接给用户的推送消息，例如聊天
+    PushMsgType_ROOM = 1; // 普通推送给用户的消息，例如直播间、群聊
+    PushMsgType_BROADCAST = 2; // 系统广播消息，例如站内通知
+}
+
+message PushMsg {
+    PushMsgType type = 1;
+    bytes body = 2;
+}
+
+message PushToUserReq {
+    string userID = 1;
+    repeated PushMsg msgs = 2;
+}
+
+message PushToUserData {}
+
+message PushToUserRes {
+    PushToUserData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
+message PushToRoomReq {
+    string roomID = 1;
+    repeated PushMsg msgs = 2;
+}
+
+message PushToRoomData {
+
+}
+
+message PushToRoomRes {
+    PushToRoomData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
+message BroadCastReq {
+    sint64 speed = 1;
+    repeated PushMsg msgs = 2;
+}
+
+message BroadCastData {
+
+}
+
+message BroadCastRes {
+    BroadCastData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
+service GateWay {
+    rpc PushToUser(PushToUserReq) returns (PushToUserRes){}
+    rpc PushToRoom(PushToRoomReq) returns (PushToRoomRes){}
+    rpc BroadCast(BroadCastReq) returns (BroadCastRes){}
+}
