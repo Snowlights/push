@@ -1,4 +1,4 @@
-package receiver
+package mq
 
 // 处理用户发送的消息，
 // 1: 用户发送的消息要发送到哪里，从redis中获取信息

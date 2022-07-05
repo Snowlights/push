@@ -6,20 +6,37 @@ import "Grpc.proto";
 
 // protoc -I=. -I= {self location}/tool/idl/grpc
 // --go_out=plugins=grpc:. gateway.proto
+
+enum OpType {
+    OpType_Default = 0;
+    OpType_HeartBeat = 1; // heartbeat
+    OpType_HeartBeatReply = 2; // heartbeat reply
+
+    OpType_Auth = 3; // auth
+    OpType_AuthReply = 4; // auth reply
+
+    OpType_ChangeRoom = 5; // change room
+    OpType_ChangeRoomReply = 6; // change room reply
+
+    OpType_Disconnect = 7; // disconnect
+}
+
+message Proto {
+    int32 ver = 1;
+    int32 op = 2;
+    int32 seq = 3;
+    bytes body = 4;
+}
+
 enum PushMsgType {
     PushMsgType_PUSH = 0; // 普通直接给用户的推送消息，例如聊天
     PushMsgType_ROOM = 1; // 普通推送给用户的消息，例如直播间、群聊
     PushMsgType_BROADCAST = 2; // 系统广播消息，例如站内通知
 }
 
-message PushMsg {
-    PushMsgType type = 1;
-    bytes body = 2;
-}
-
 message PushToUserReq {
     string userID = 1;
-    repeated PushMsg msgs = 2;
+    repeated Proto msgs = 2;
 }
 
 message PushToUserData {}
@@ -31,7 +48,7 @@ message PushToUserRes {
 
 message PushToRoomReq {
     string roomID = 1;
-    repeated PushMsg msgs = 2;
+    repeated Proto msgs = 2;
 }
 
 message PushToRoomData {
@@ -45,7 +62,7 @@ message PushToRoomRes {
 
 message BroadCastReq {
     sint64 speed = 1;
-    repeated PushMsg msgs = 2;
+    Proto msg = 2;
 }
 
 message BroadCastData {
@@ -57,8 +74,24 @@ message BroadCastRes {
     grpcBase.ErrInfo errInfo = 2;
 }
 
+message BroadCastRoomReq {
+    sint64 speed = 1;
+    string roomID = 2;
+    Proto msg = 3;
+}
+
+message BroadCastRoomData {
+
+}
+
+message BroadCastRoomRes {
+    BroadCastRoomData data = 1;
+    grpcBase.ErrInfo errInfo = 2;
+}
+
 service GateWay {
     rpc PushToUser(PushToUserReq) returns (PushToUserRes){}
     rpc PushToRoom(PushToRoomReq) returns (PushToRoomRes){}
     rpc BroadCast(BroadCastReq) returns (BroadCastRes){}
+    rpc BroadCastRoom(BroadCastRoomReq) returns (BroadCastRoomRes){}
 }
