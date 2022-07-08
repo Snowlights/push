@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"github.com/Snowlights/push/gateway/config"
 	push_gateway "github.com/Snowlights/push/gateway/protocol"
 	"sync"
 	"sync/atomic"
@@ -16,12 +17,12 @@ type Bucket struct {
 	curRoutine  uint64
 }
 
-func NewBucket(routineNum uint64) *Bucket {
+func NewBucket(c *config.Bucket) *Bucket {
 	b := new(Bucket)
-	b.keyToChannel = make(map[string]*Channel)
-	b.roomIDToRoom = make(map[string]*Room)
-	for i := uint64(0); i < routineNum; i++ {
-		c := make(chan *push_gateway.BroadCastRoomReq, 100)
+	b.keyToChannel = make(map[string]*Channel, c.Channel)
+	b.roomIDToRoom = make(map[string]*Room, c.Room)
+	for i := uint64(0); i < c.Routine; i++ {
+		c := make(chan *push_gateway.BroadCastRoomReq, c.RoutineSize)
 		b.routines[i] = c
 		go b.procRoomRoutine(c)
 	}

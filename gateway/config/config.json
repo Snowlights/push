@@ -1,5 +1,11 @@
 {
   "server" : {
+    "conn" : {
+      "sendBuf" : 4096,
+      "recvBuf" : 4096,
+      "clientProto" : 64,
+      "serverProto" : 64
+    },
     "pool" : {
       "readerCap" : 16,
       "readerSize" : 1024,

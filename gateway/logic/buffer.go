@@ -18,12 +18,12 @@ func NewPool(size, maxLength uint64) *Pool {
 	p := new(Pool)
 	p.size = size
 	p.maxLength = maxLength
-	p.nextLength = maxLength
 
 	for i := uint64(0); i < maxLength/4; i++ {
 		b := p.newBuffer()
 		b.next = p.next
 		p.next = b
+		p.nextLength++
 	}
 	return p
 }
