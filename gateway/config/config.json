@@ -1,0 +1,23 @@
+{
+  "server" : {
+    "pool" : {
+      "readerCap" : 16,
+      "readerSize" : 1024,
+      "readerBuf" : 8192,
+      "writerCap" : 16,
+      "writerSize" : 1024,
+      "writerBuf" : 8192
+    },
+    "bucket" : {
+      "cap" : 16,
+      "channel" : 1024,
+      "room" : 1024,
+      "routine" : 16,
+      "routineSize" : 1024
+    }
+  },
+  "websocket" : {
+    "addr" : [":8888"],
+    "keepalive" : false
+  }
+}

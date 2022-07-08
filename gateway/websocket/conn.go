@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"fmt"
+	"github.com/Snowlights/push/gateway/logic"
 	"github.com/Snowlights/tool/vlog"
 	"net"
 	"runtime"
@@ -12,27 +13,35 @@ import (
 // 服务发现部分将依赖etcd
 // 推送service部分将使用rpc的方式
 
-func InitWebSocketServer(ctx context.Context, addr string) error {
+type WebSocketServer struct {
+	server *logic.Server
+}
+
+func InitWebSocketServer(ctx context.Context, addr string, s *logic.Server) (*WebSocketServer, error) {
 	fun := "websocket.InitWebSocketServer -->"
+
+	serv := &WebSocketServer{
+		s,
+	}
 
 	bind, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("%s ResolveTCPAddr failed: %v", fun, err)
+		return nil, fmt.Errorf("%s ResolveTCPAddr failed: %v", fun, err)
 	}
 
 	listener, err := net.ListenTCP("tcp", bind)
 	if err != nil {
-		return fmt.Errorf("%s ListenServAddr failed, error: %v", fun, err)
+		return nil, fmt.Errorf("%s ListenServAddr failed, error: %v", fun, err)
 	}
 
 	for i := 0; i < runtime.NumCPU(); i++ {
-		go acceptWebSocket(ctx, listener)
+		go serv.acceptWebSocket(ctx, listener)
 	}
 
-	return nil
+	return serv, nil
 }
 
-func acceptWebSocket(ctx context.Context, listener *net.TCPListener) {
+func (s *WebSocketServer) acceptWebSocket(ctx context.Context, listener *net.TCPListener) {
 	fun := "websocket.acceptWebSocket -->"
 	for {
 		conn, err := listener.AcceptTCP()
@@ -52,11 +61,13 @@ func acceptWebSocket(ctx context.Context, listener *net.TCPListener) {
 			vlog.ErrorF(ctx, "%s conn.SetWriteBuffer() error(%v)", fun, err)
 			return
 		}
-		go servWebsocket(conn)
+		go s.servWebsocket(conn)
 	}
 
 }
 
-func servWebsocket(conn net.Conn) {
+func (s *WebSocketServer) servWebsocket(conn net.Conn) {
+	// todo 新建channel，绑定bucket
+	// todo 读取和写入消息
 
 }
