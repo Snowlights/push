@@ -7,6 +7,10 @@ type Buffer struct {
 	next *Buffer
 }
 
+func (b *Buffer) Bytes() []byte {
+	return b.buf
+}
+
 type Pool struct {
 	mu                    sync.Mutex
 	next                  *Buffer

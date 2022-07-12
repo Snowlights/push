@@ -1,9 +1,14 @@
 package websocket
 
 import (
-	"bufio"
+	"crypto/sha1"
+	"encoding/base64"
+	"encoding/binary"
 	"errors"
+	"fmt"
+	"github.com/Snowlights/push/gateway/pkg/buf"
 	"io"
+	"strings"
 )
 
 const (
@@ -52,14 +57,60 @@ var (
 	ErrMessageMaxRead = errors.New("continuation frame max read")
 )
 
+var (
+	keyGUID = []byte("258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
+	// ErrBadRequestMethod bad request method
+	ErrBadRequestMethod = errors.New("bad method")
+	// ErrNotWebSocket not websocket protocal
+	ErrNotWebSocket = errors.New("not websocket protocol")
+	// ErrBadWebSocketVersion bad websocket version
+	ErrBadWebSocketVersion = errors.New("missing or bad WebSocket Version")
+	// ErrChallengeResponse mismatch challenge response
+	ErrChallengeResponse = errors.New("mismatch challenge/response")
+)
+
 type Conn struct {
-	rwc io.ReadWriteCloser
-	r   *bufio.Reader
-	w   *bufio.Writer
+	rwc     io.ReadWriteCloser
+	r       *buf.Reader
+	w       *buf.Writer
+	maskKey []byte
 }
 
-func newConn(rwc io.ReadWriteCloser, r *bufio.Reader, w *bufio.Writer) *Conn {
-	return &Conn{rwc: rwc, r: r, w: w}
+// Upgrade Switching Protocols
+func Upgrade(rwc io.ReadWriteCloser, rr *buf.Reader, wr *buf.Writer, req *Request) (conn *Conn, err error) {
+	if req.Method != "GET" {
+		return nil, ErrBadRequestMethod
+	}
+	if req.Header.Get("Sec-Websocket-Version") != "13" {
+		return nil, ErrBadWebSocketVersion
+	}
+	if strings.ToLower(req.Header.Get("Upgrade")) != "websocket" {
+		return nil, ErrNotWebSocket
+	}
+	if !strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade") {
+		return nil, ErrNotWebSocket
+	}
+	challengeKey := req.Header.Get("Sec-Websocket-Key")
+	if challengeKey == "" {
+		return nil, ErrChallengeResponse
+	}
+	_, _ = wr.WriteString("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n")
+	_, _ = wr.WriteString("Sec-WebSocket-Accept: " + computeAcceptKey(challengeKey) + "\r\n\r\n")
+	if err = wr.Flush(); err != nil {
+		return
+	}
+	return newConn(rwc, rr, wr), nil
+}
+
+func computeAcceptKey(challengeKey string) string {
+	h := sha1.New()
+	_, _ = h.Write([]byte(challengeKey))
+	_, _ = h.Write(keyGUID)
+	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+func newConn(rwc io.ReadWriteCloser, r *buf.Reader, w *buf.Writer) *Conn {
+	return &Conn{rwc: rwc, r: r, w: w, maskKey: make([]byte, 4)}
 }
 
 // WriteMessage write a message by type.
@@ -73,8 +124,35 @@ func (c *Conn) WriteMessage(msgType int, msg []byte) (err error) {
 
 // WriteHeader write header frame.
 func (c *Conn) WriteHeader(msgType int, length int) (err error) {
-
-	return nil
+	var h []byte
+	if h, err = c.w.Peek(2); err != nil {
+		return
+	}
+	// 1.First byte. FIN/RSV1/RSV2/RSV3/OpCode(4bits)
+	h[0] = 0
+	h[0] |= finBit | byte(msgType)
+	// 2.Second byte. Mask/Payload len(7bits)
+	h[1] = 0
+	switch {
+	case length <= 125:
+		// 7 bits
+		h[1] |= byte(length)
+	case length < 65536:
+		// 16 bits
+		h[1] |= 126
+		if h, err = c.w.Peek(2); err != nil {
+			return
+		}
+		binary.BigEndian.PutUint64(h, uint64(length))
+	default:
+		// 64 bits
+		h[1] |= 127
+		if h, err = c.w.Peek(8); err != nil {
+			return
+		}
+		binary.BigEndian.PutUint64(h, uint64(length))
+	}
+	return
 }
 
 // WriteBody write a message body.
@@ -85,6 +163,10 @@ func (c *Conn) WriteBody(b []byte) (err error) {
 	return
 }
 
+func (c *Conn) Peek(n int) ([]byte, error) {
+	return c.w.Peek(n)
+}
+
 // Flush flush writer buffer
 func (c *Conn) Flush() error {
 	return c.w.Flush()
@@ -92,10 +174,132 @@ func (c *Conn) Flush() error {
 
 // ReadMessage read a message.
 func (c *Conn) ReadMessage() (op int, payload []byte, err error) {
-	return 0, nil, nil
+	var (
+		fin         bool
+		finOp, n    int
+		partPayload []byte
+	)
+	for {
+		// read frame
+		if fin, op, partPayload, err = c.readFrame(); err != nil {
+			return
+		}
+		switch op {
+		case BinaryMessage, TextMessage, continuationFrame:
+			if fin && len(payload) == 0 {
+				return op, partPayload, nil
+			}
+			// continuation frame
+			payload = append(payload, partPayload...)
+			if op != continuationFrame {
+				finOp = op
+			}
+			// final frame
+			if fin {
+				op = finOp
+				return
+			}
+		case PingMessage:
+			// handler ping
+			if err = c.WriteMessage(PongMessage, partPayload); err != nil {
+				return
+			}
+		case PongMessage:
+			// handler pong
+		case CloseMessage:
+			// handler close
+			err = ErrMessageClose
+			return
+		default:
+			err = fmt.Errorf("unknown control message, fin=%t, op=%d", fin, op)
+			return
+		}
+		if n > continuationFrameMaxRead {
+			err = ErrMessageMaxRead
+			return
+		}
+		n++
+	}
+}
+
+func (c *Conn) readFrame() (fin bool, op int, payload []byte, err error) {
+	var (
+		b          byte
+		p          []byte
+		mask       bool
+		maskKey    []byte
+		payloadLen int64
+	)
+	// 1.First byte. FIN/RSV1/RSV2/RSV3/OpCode(4bits)
+	b, err = c.r.ReadByte()
+	if err != nil {
+		return
+	}
+	// final frame
+	fin = (b & finBit) != 0
+	// rsv MUST be 0
+	if rsv := b & (rsv1Bit | rsv2Bit | rsv3Bit); rsv != 0 {
+		return false, 0, nil, fmt.Errorf("unexpected reserved bits rsv1=%d, rsv2=%d, rsv3=%d", b&rsv1Bit, b&rsv2Bit, b&rsv3Bit)
+	}
+	// op code
+	op = int(b & opBit)
+	// 2.Second byte. Mask/Payload len(7bits)
+	b, err = c.r.ReadByte()
+	if err != nil {
+		return
+	}
+	// is mask payload
+	mask = (b & maskBit) != 0
+	// payload length
+	switch b & lenBit {
+	case 126:
+		// 16 bits
+		if p, err = c.r.Pop(2); err != nil {
+			return
+		}
+		payloadLen = int64(binary.BigEndian.Uint16(p))
+	case 127:
+		// 64 bits
+		if p, err = c.r.Pop(8); err != nil {
+			return
+		}
+		payloadLen = int64(binary.BigEndian.Uint64(p))
+	default:
+		// 7 bits
+		payloadLen = int64(b & lenBit)
+	}
+	// read mask key
+	if mask {
+		maskKey, err = c.r.Pop(4)
+		if err != nil {
+			return
+		}
+		if c.maskKey == nil {
+			c.maskKey = make([]byte, 4)
+		}
+		copy(c.maskKey, maskKey)
+	}
+	// read payload
+	if payloadLen > 0 {
+		if payload, err = c.r.Pop(int(payloadLen)); err != nil {
+			return
+		}
+		if mask {
+			maskBytes(c.maskKey, 0, payload)
+		}
+	}
+	return
 }
 
 // Close close the connection.
 func (c *Conn) Close() error {
 	return c.rwc.Close()
+}
+
+func maskBytes(key []byte, pos int, b []byte) int {
+	for i := range b {
+		b[i] ^= key[pos&3]
+		pos++
+	}
+	return pos & 3
 }

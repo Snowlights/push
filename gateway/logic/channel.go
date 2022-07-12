@@ -1,7 +1,7 @@
 package logic
 
 import (
-	"bufio"
+	"github.com/Snowlights/push/gateway/pkg/buf"
 	push_gateway "github.com/Snowlights/push/gateway/protocol"
 	"sync"
 )
@@ -12,13 +12,13 @@ type Channel struct {
 	ServerProto chan *push_gateway.Proto
 	Room        *Room
 
-	Writer bufio.Writer
-	Reader bufio.Reader
+	Writer buf.Writer
+	Reader buf.Reader
 	Next   *Channel
 	Prev   *Channel
 
 	Key string
-	Ip  string // ip address
+	IP  string // ip address
 
 	acceptMu sync.RWMutex
 	accepts  map[int64]struct{} // accept message op
